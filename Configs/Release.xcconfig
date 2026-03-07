@@ -1,0 +1,3 @@
+// Release configuration
+// Production API base URL is set via AppConfiguration.swift environment variables
+// or Xcode scheme settings. Do not hardcode credentials or URLs here.

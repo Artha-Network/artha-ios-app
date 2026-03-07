@@ -1,0 +1,65 @@
+name: ArthaNetwork
+
+options:
+  bundleIdPrefix: com.arthanetwork
+  deploymentTarget:
+    iOS: "17.0"
+  xcodeVersion: "15.4"
+  generateEmptyDirectories: true
+  transitivelyLinkDependencies: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+    SUPPORTS_MACCATALYST: false
+    TARGETED_DEVICE_FAMILY: "1"
+    ENABLE_STRICT_CONCURRENCY: targeted
+    SWIFT_STRICT_CONCURRENCY: targeted
+    OTHER_SWIFT_FLAGS: ""
+    DEAD_CODE_STRIPPING: YES
+    ENABLE_TESTABILITY: YES
+  configs:
+    Debug:
+      xcconfig: Configs/Debug.xcconfig
+    Release:
+      xcconfig: Configs/Release.xcconfig
+
+packages:
+  Sodium:
+    url: https://github.com/jedisct1/swift-sodium
+    from: "0.9.1"
+
+targets:
+  ArthaNetwork:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    dependencies:
+      - package: Sodium
+    sources:
+      - path: ArthaNetwork
+        excludes:
+          - "**/.DS_Store"
+    info:
+      path: ArthaNetwork/Info.plist
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.arthanetwork.ios
+        INFOPLIST_FILE: ArthaNetwork/Info.plist
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: ""
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        ENABLE_PREVIEWS: YES
+      configs:
+        Debug:
+          DEBUG_INFORMATION_FORMAT: dwarf-with-dsym
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG
+          SWIFT_OPTIMIZATION_LEVEL: "-Onone"
+          GCC_OPTIMIZATION_LEVEL: "0"
+        Release:
+          DEBUG_INFORMATION_FORMAT: dwarf-with-dsym
+          SWIFT_OPTIMIZATION_LEVEL: "-O"
+          VALIDATE_PRODUCT: YES
+          COPY_PHASE_STRIP: NO

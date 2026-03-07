@@ -1,0 +1,6 @@
+// Debug configuration
+// Override API base URL for local development:
+//   API_BASE_URL = http://localhost:4000
+//
+// Set this in your scheme's environment variables instead of here
+// so it doesn't get committed. See README.md > Configuration.
