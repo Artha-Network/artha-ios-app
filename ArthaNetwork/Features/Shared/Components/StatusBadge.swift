@@ -15,12 +15,12 @@ struct StatusBadge: View {
 
     private var backgroundColor: Color {
         switch status {
-        case .INIT:      return .blue
-        case .FUNDED:    return .green
+        case .INIT:      return .gray
+        case .FUNDED:    return .blue
         case .DISPUTED:  return .orange
         case .RESOLVED:  return .purple
-        case .RELEASED:  return .teal
-        case .REFUNDED:  return .gray
+        case .RELEASED:  return .green
+        case .REFUNDED:  return .red
         }
     }
 }

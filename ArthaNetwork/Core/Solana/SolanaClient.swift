@@ -52,6 +52,37 @@ private struct AnyCodable: Decodable {
     }
 }
 
+/// Response shape for `getTokenAccountsByOwner` with jsonParsed encoding.
+private struct TokenAccountsResult: Decodable {
+    let value: [TokenAccountEntry]
+}
+
+private struct TokenAccountEntry: Decodable {
+    let account: TokenAccountData
+}
+
+private struct TokenAccountData: Decodable {
+    let data: ParsedTokenData
+}
+
+private struct ParsedTokenData: Decodable {
+    let parsed: ParsedTokenInfo
+}
+
+private struct ParsedTokenInfo: Decodable {
+    let info: TokenInfo
+}
+
+private struct TokenInfo: Decodable {
+    let tokenAmount: TokenAmount
+}
+
+private struct TokenAmount: Decodable {
+    let uiAmount: Double?
+    let amount: String
+    let decimals: Int
+}
+
 // MARK: - SolanaClient
 
 /// Minimal Solana JSON-RPC client for transaction submission and confirmation polling.
@@ -80,10 +111,22 @@ actor SolanaClient {
     }
 
     /// Fetch USDC token balance for a wallet address.
-    /// Not yet implemented — returns 0 until token account parsing is added.
+    /// Uses `getTokenAccountsByOwner` RPC filtered by the configured USDC mint.
     func getUSDCBalance(pubkey: String) async throws -> Double {
-        // TODO: Implement getTokenAccountsByOwner filtered by USDC mint
-        return 0
+        let params: [Any] = [
+            pubkey,
+            ["mint": AppConfiguration.usdcMint] as [String: String],
+            ["encoding": "jsonParsed"] as [String: String]
+        ]
+        let data = try await rpcRequest(method: "getTokenAccountsByOwner", params: params)
+        let response = try JSONDecoder().decode(RPCResponse<TokenAccountsResult>.self, from: data)
+        if let err = response.error {
+            throw SolanaError.rpcError(code: err.code, message: err.message)
+        }
+        guard let accounts = response.result?.value, let first = accounts.first else {
+            return 0
+        }
+        return first.account.data.parsed.info.tokenAmount.uiAmount ?? 0
     }
 
     // MARK: - Transaction Submission

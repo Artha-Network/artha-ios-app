@@ -19,7 +19,11 @@ struct DealDetailView: View {
                 VStack(alignment: .leading, spacing: 20) {
                     dealHeader(deal)
                     statusContextCard(deal)
+                    usdcBalanceSection(deal)
                     dealDetails(deal)
+                    if deal.vin != nil {
+                        vinTitleCard(deal)
+                    }
                     if let contract = deal.contract, !contract.isEmpty {
                         contractSection(contract)
                     }
@@ -115,6 +119,17 @@ struct DealDetailView: View {
         }
         .task {
             await viewModel.loadDeal(id: dealId)
+            // Start VIN title polling if deal has a VIN
+            if let vin = viewModel.deal?.vin, !vin.isEmpty {
+                viewModel.startTitlePolling(vin: vin)
+            }
+            // Start USDC balance polling if buyer viewing INIT deal
+            let myWallet = appState.currentUser?.walletAddress ?? ""
+            if viewModel.deal?.status == .INIT,
+               viewModel.deal?.buyerWallet == myWallet,
+               !myWallet.isEmpty {
+                viewModel.startBalancePolling(pubkey: myWallet)
+            }
         }
     }
 
@@ -201,6 +216,126 @@ struct DealDetailView: View {
         GroupBox("Contract") {
             MarkdownView(markdown: contract, font: .caption)
                 .frame(maxHeight: 280)
+        }
+    }
+
+    // MARK: - USDC Balance
+
+    @ViewBuilder
+    private func usdcBalanceSection(_ deal: Deal) -> some View {
+        let myWallet = appState.currentUser?.walletAddress ?? ""
+        let isBuyer = deal.buyerWallet == myWallet
+
+        if deal.status == .INIT && isBuyer {
+            if viewModel.hasInsufficientUSDC {
+                GroupBox {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label("Insufficient USDC Balance", systemImage: "exclamationmark.triangle.fill")
+                            .font(.subheadline.bold())
+                            .foregroundStyle(.red)
+                        if let balance = viewModel.usdcBalance {
+                            Text("Your wallet has \(String(format: "%.2f", balance)) USDC but this deal requires \(String(format: "%.2f", deal.priceUsd * 1.005)) USDC (including 0.5% fee).")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Text("You need devnet USDC tokens (not SOL) to fund this escrow. SOL is only used for transaction fees.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .backgroundStyle(Color.red.opacity(0.04))
+            } else if let balance = viewModel.usdcBalance {
+                GroupBox {
+                    HStack {
+                        Label("USDC Balance", systemImage: "creditcard")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Text("\(String(format: "%.2f", balance)) USDC")
+                            .font(.subheadline.bold().monospacedDigit())
+                    }
+                }
+            } else if viewModel.isBalanceLoading {
+                GroupBox {
+                    HStack {
+                        Label("Checking balance…", systemImage: "creditcard")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        ProgressView()
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - VIN Title Card
+
+    @ViewBuilder
+    private func vinTitleCard(_ deal: Deal) -> some View {
+        if let title = viewModel.vehicleTitle {
+            let isTransferred = title.isTransferred
+            GroupBox {
+                VStack(alignment: .leading, spacing: 10) {
+                    Label("Vehicle Title Status", systemImage: "car.fill")
+                        .font(.subheadline.bold())
+
+                    LabeledContent("VIN") {
+                        Text(title.vin)
+                            .font(.caption.monospaced())
+                    }
+
+                    LabeledContent("Title Status") {
+                        Text(isTransferred ? "Transferred" : "Pending")
+                            .font(.caption.bold())
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(isTransferred ? Color.green.opacity(0.15) : Color.yellow.opacity(0.15))
+                            .foregroundStyle(isTransferred ? .green : .orange)
+                            .clipShape(Capsule())
+                    }
+
+                    LabeledContent("Current Owner") {
+                        Text(title.currentOwnerWallet.prefix(6) + "..." + title.currentOwnerWallet.suffix(4))
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                    }
+
+                    if let transferDate = title.transferDate {
+                        LabeledContent("Transfer Date") {
+                            Text(transferDate.formatted(date: .abbreviated, time: .shortened))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    if isTransferred && deal.status == .FUNDED {
+                        Label("Title has been transferred. You may now release the funds.",
+                              systemImage: "checkmark.circle.fill")
+                            .font(.caption)
+                            .foregroundStyle(.green)
+                            .padding(.top, 4)
+                    }
+                }
+            }
+            .backgroundStyle(isTransferred ? Color.green.opacity(0.04) : Color.clear)
+        } else if let vin = deal.vin, !vin.isEmpty {
+            GroupBox {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("Vehicle Title Status", systemImage: "car.fill")
+                        .font(.subheadline.bold())
+                    LabeledContent("VIN") {
+                        Text(vin)
+                            .font(.caption.monospaced())
+                    }
+                    HStack(spacing: 6) {
+                        ProgressView()
+                            .scaleEffect(0.7)
+                        Text("Checking title status…")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
         }
     }
 
@@ -397,7 +532,7 @@ struct DealDetailView: View {
                         .padding(.vertical, 4)
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(viewModel.currentAction != nil)
+                .disabled(viewModel.currentAction != nil || viewModel.hasInsufficientUSDC)
             }
 
             if deal.status.canRelease && isSeller {

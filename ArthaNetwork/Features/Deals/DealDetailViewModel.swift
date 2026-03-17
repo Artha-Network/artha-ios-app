@@ -13,6 +13,19 @@ final class DealDetailViewModel {
     var wasDeleted = false
     var currentAction: ActionStep?
 
+    // VIN title tracking
+    var vehicleTitle: VehicleTitle?
+
+    // USDC balance
+    var usdcBalance: Double?
+    var isBalanceLoading = false
+
+    var hasInsufficientUSDC: Bool {
+        guard let balance = usdcBalance, let amount = deal?.priceUsd else { return false }
+        let fee = amount * 0.005
+        return balance < (amount + fee)
+    }
+
     enum ActionStep: Equatable {
         case waitingForSignature
         case confirming
@@ -33,7 +46,10 @@ final class DealDetailViewModel {
     }
 
     private let dealUseCase = DealUseCase()
+    private let dealRepo = DealRepository()
     private var pollingTask: Task<Void, Never>?
+    private var titlePollingTask: Task<Void, Never>?
+    private var balancePollingTask: Task<Void, Never>?
 
     func loadDeal(id: String) async {
         isLoading = true
@@ -45,6 +61,57 @@ final class DealDetailViewModel {
         }
         isLoading = false
     }
+
+    // MARK: - VIN Title
+
+    func startTitlePolling(vin: String) {
+        titlePollingTask?.cancel()
+        titlePollingTask = Task {
+            // Fetch immediately, then poll every 10 seconds.
+            await fetchTitle(vin: vin)
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(10))
+                guard !Task.isCancelled else { break }
+                await fetchTitle(vin: vin)
+                if vehicleTitle?.isTransferred == true { break }
+            }
+        }
+    }
+
+    private func fetchTitle(vin: String) async {
+        do {
+            vehicleTitle = try await dealRepo.fetchVINTitle(vin: vin)
+        } catch {
+            // 404 is expected if no title record exists yet
+        }
+    }
+
+    // MARK: - USDC Balance
+
+    func startBalancePolling(pubkey: String) {
+        balancePollingTask?.cancel()
+        isBalanceLoading = true
+        balancePollingTask = Task {
+            // Fetch immediately, then poll every 15 seconds.
+            await fetchBalance(pubkey: pubkey)
+            isBalanceLoading = false
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(15))
+                guard !Task.isCancelled else { break }
+                await fetchBalance(pubkey: pubkey)
+            }
+        }
+    }
+
+    private func fetchBalance(pubkey: String) async {
+        do {
+            usdcBalance = try await SolanaClient.shared.getUSDCBalance(pubkey: pubkey)
+        } catch {
+            // RPC error — leave balance as unknown (nil)
+        }
+    }
+
+    // MARK: - Deal Polling
 
     /// Poll every 15 seconds for deals in active states (mirrors web-app behavior).
     private func startPollingIfNeeded(id: String) {
@@ -64,7 +131,11 @@ final class DealDetailViewModel {
 
     func stopPolling() {
         pollingTask?.cancel()
+        titlePollingTask?.cancel()
+        balancePollingTask?.cancel()
     }
+
+    // MARK: - Actions
 
     func deleteDeal(id: String) async {
         isLoading = true

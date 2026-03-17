@@ -26,6 +26,12 @@ struct DealRepository {
         ])
     }
 
+    // MARK: - VIN / Title
+
+    func fetchVINTitle(vin: String) async throws -> VehicleTitle {
+        try await api.get(APIEndpoints.vinTitle(vin))
+    }
+
     // MARK: - Escrow Actions
 
     func initiateEscrow(
