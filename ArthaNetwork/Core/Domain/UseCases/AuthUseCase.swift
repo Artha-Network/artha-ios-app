@@ -12,19 +12,24 @@ struct AuthUseCase {
 
     /// Full sign-in flow: build message, sign with wallet, send to server.
     func signIn() async throws -> User {
-        // 1. Build canonical auth message
-        let (messageData, messageDict) = wallet.buildAuthMessage()
+        // 1. Build canonical auth message (JSON bytes with sorted keys)
+        let (messageData, _) = wallet.buildAuthMessage()
 
-        // 2. Sign with wallet
+        // 2. Sign with wallet — Phantom signs these exact bytes
         let signature = try await wallet.signMessage(messageData)
 
-        // 3. Send to server
+        // 3. Send to server — message must be the JSON *string* (not a dictionary)
+        //    because the server does JSON.parse(message) and verifies the signature
+        //    against TextEncoder.encode(message).
         guard let pubkey = wallet.publicKey else {
             throw AppError.wallet("No wallet connected")
         }
+        guard let messageString = String(data: messageData, encoding: .utf8) else {
+            throw AppError.wallet("Failed to encode auth message")
+        }
         let user = try await authRepo.signIn(
             pubkey: pubkey,
-            message: messageDict,
+            message: messageString,
             signature: Array(signature)
         )
 
