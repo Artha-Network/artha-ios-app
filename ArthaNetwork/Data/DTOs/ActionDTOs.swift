@@ -5,8 +5,10 @@ struct InitiateRequest: Encodable {
     let buyerWallet: String
     let amount: Double
     let feeBps: Int
-    let deliverBy: String
-    let disputeDeadline: String
+    /// Unix timestamp in seconds — server schema is z.number().int().
+    let deliverBy: Int
+    /// Unix timestamp in seconds — server schema is z.number().int().
+    let disputeDeadline: Int
     let description: String
     let title: String
     let buyerEmail: String
