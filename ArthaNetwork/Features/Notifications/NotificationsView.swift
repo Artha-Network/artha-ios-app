@@ -2,6 +2,7 @@ import SwiftUI
 
 struct NotificationsView: View {
     @Environment(AppState.self) private var appState
+    @Environment(AppRouter.self) private var router
     @State private var viewModel = NotificationsViewModel()
 
     var body: some View {
@@ -15,16 +16,23 @@ struct NotificationsView: View {
             }
 
             ForEach(viewModel.notifications) { notification in
-                NotificationRowView(notification: notification)
-                    .swipeActions {
-                        if !notification.isRead {
-                            Button("Mark Read") {
-                                Task { await viewModel.markAsRead(notification.id) }
-                            }
-                            .tint(.blue)
-                        }
+                Button {
+                    if let dealId = notification.dealId {
+                        router.navigateToDeal(dealId)
                     }
-                    .listRowBackground(notification.isRead ? Color.clear : Color.blue.opacity(0.05))
+                } label: {
+                    NotificationRowView(notification: notification)
+                }
+                .buttonStyle(.plain)
+                .swipeActions {
+                    if !notification.isRead {
+                        Button("Mark Read") {
+                            Task { await viewModel.markAsRead(notification.id) }
+                        }
+                        .tint(.blue)
+                    }
+                }
+                .listRowBackground(notification.isRead ? Color.clear : Color.blue.opacity(0.05))
             }
         }
         .navigationTitle("Notifications")
@@ -70,30 +78,76 @@ struct NotificationsView: View {
     }
 }
 
+// MARK: - Notification Row
+
 struct NotificationRowView: View {
     let notification: AppNotification
 
+    private var iconInfo: (name: String, color: Color) {
+        guard let type = notification.type?.lowercased() else {
+            return ("bell", .gray)
+        }
+        if type.contains("fund") && !type.contains("refund") {
+            return ("dollarsign.circle.fill", .blue)
+        }
+        if type.contains("release") {
+            return ("arrow.up.circle.fill", .green)
+        }
+        if type.contains("refund") {
+            return ("arrow.down.circle.fill", .purple)
+        }
+        if type.contains("dispute") {
+            return ("exclamationmark.triangle.fill", .orange)
+        }
+        if type.contains("resolv") || type.contains("arbitrat") {
+            return ("scale.3d", .purple)
+        }
+        if type.contains("evidence") {
+            return ("doc.text.fill", .indigo)
+        }
+        if type.contains("creat") || type.contains("initiat") {
+            return ("plus.circle.fill", .gray)
+        }
+        return ("bell.fill", .gray)
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                if !notification.isRead {
-                    Circle()
-                        .fill(.blue)
-                        .frame(width: 8, height: 8)
+        HStack(alignment: .top, spacing: 10) {
+            // Icon
+            Image(systemName: iconInfo.name)
+                .font(.title3)
+                .foregroundStyle(iconInfo.color)
+                .frame(width: 28, alignment: .center)
+
+            // Content
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    if !notification.isRead {
+                        Circle()
+                            .fill(.blue)
+                            .frame(width: 8, height: 8)
+                    }
+                    Text(notification.title)
+                        .font(.subheadline.bold())
+                    Spacer()
+                    if let date = notification.createdAt {
+                        Text(date, style: .relative)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
                 }
-                Text(notification.title)
-                    .font(.subheadline.bold())
-                Spacer()
-                if let date = notification.createdAt {
-                    Text(date, style: .relative)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
+                Text(notification.body)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
             }
-            Text(notification.body)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .lineLimit(2)
+
+            // Chevron when navigable
+            if notification.dealId != nil {
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
         }
         .padding(.vertical, 4)
     }
