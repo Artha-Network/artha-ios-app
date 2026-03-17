@@ -5,6 +5,7 @@ struct DealDetailView: View {
     @Environment(AppState.self) private var appState
     @Environment(WalletManager.self) private var walletManager
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
     @State private var viewModel = DealDetailViewModel()
     @State private var showDeleteConfirmation = false
     @State private var showFundConfirmation = false
@@ -140,6 +141,12 @@ struct DealDetailView: View {
         GroupBox("Deal Details") {
             VStack(alignment: .leading, spacing: 10) {
                 USDCAmountView(amount: deal.priceUsd, label: "Amount")
+                if let feeBps = deal.feeBps, feeBps > 0 {
+                    LabeledContent("Platform Fee") {
+                        Text(String(format: "%.1f%%", Double(feeBps) / 100.0))
+                            .foregroundStyle(.secondary)
+                    }
+                }
                 Divider()
                 walletRow(label: "Seller",
                           displayName: deal.seller?.displayName,
@@ -300,20 +307,33 @@ struct DealDetailView: View {
         GroupBox("Activity") {
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(events) { event in
-                    HStack {
-                        Circle()
-                            .fill(.blue.opacity(0.7))
-                            .frame(width: 6, height: 6)
-                        Text(event.instruction
-                            .replacingOccurrences(of: "_", with: " ")
-                            .capitalized)
-                        .font(.caption.bold())
-                        Spacer()
-                        if let date = event.createdAt {
-                            Text(date, style: .relative)
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Circle()
+                                .fill(.blue.opacity(0.7))
+                                .frame(width: 6, height: 6)
+                            Text(event.instruction
+                                .replacingOccurrences(of: "_", with: " ")
+                                .capitalized)
+                            .font(.caption.bold())
+                            Spacer()
+                            if let date = event.createdAt {
+                                Text(date, style: .relative)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
+                        Button {
+                            openExplorer(txSig: event.txSig)
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "arrow.up.right.square")
+                                Text(event.txSig.prefix(8) + "..." + event.txSig.suffix(4))
+                            }
+                            .font(.caption2.monospaced())
+                            .foregroundStyle(.blue)
+                        }
+                        .buttonStyle(.plain)
                     }
                     if event.id != events.last?.id {
                         Divider()
@@ -321,6 +341,13 @@ struct DealDetailView: View {
                 }
             }
         }
+    }
+
+    private func openExplorer(txSig: String) {
+        let cluster = AppConfiguration.solanaCluster
+        let query = cluster == "mainnet-beta" ? "" : "?cluster=\(cluster)"
+        guard let url = URL(string: "https://explorer.solana.com/tx/\(txSig)\(query)") else { return }
+        openURL(url)
     }
 }
 
