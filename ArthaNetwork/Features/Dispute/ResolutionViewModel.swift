@@ -6,6 +6,7 @@ final class ResolutionViewModel {
     var resolution: Resolution?
     var deal: Deal?
     var isLoading = false
+    var isPolling = false
     var currentAction: ActionStep?
     var error: String?
     var executeError: String?
@@ -31,17 +32,31 @@ final class ResolutionViewModel {
 
     private let evidenceUseCase = EvidenceUseCase()
     private let dealUseCase = DealUseCase()
+    private var pollingTask: Task<Void, Never>?
 
     func load(dealId: String) async {
         isLoading = true
         async let resolutionResult = evidenceUseCase.fetchResolution(dealId: dealId)
         async let dealResult = dealUseCase.fetchDeal(id: dealId)
         do {
-            (resolution, deal) = try await (resolutionResult, dealResult)
+            let (res, d) = try await (resolutionResult, dealResult)
+            resolution = res
+            deal = d
         } catch {
-            self.error = error.localizedDescription
+            // Resolution may 404 if not yet issued — that's expected, not an error.
+            if let apiError = error as? APIError, case .httpError(statusCode: let code) = apiError, code == 404 {
+                // No resolution yet — start polling.
+                do { deal = try await dealUseCase.fetchDeal(id: dealId) } catch {}
+            } else {
+                self.error = error.localizedDescription
+            }
         }
         isLoading = false
+
+        // If no resolution yet and deal is DISPUTED, poll for it.
+        if resolution == nil, deal?.status == .DISPUTED {
+            startPolling(dealId: dealId)
+        }
     }
 
     /// `wallet` is the shared WalletManager from the view's @Environment — never create a local instance.
@@ -57,7 +72,6 @@ final class ResolutionViewModel {
             } else {
                 try await useCase.refund(dealId: dealId)
             }
-            // Reload deal to reflect terminal state
             deal = try await dealUseCase.fetchDeal(id: dealId)
         } catch {
             executeError = error.localizedDescription
@@ -66,5 +80,41 @@ final class ResolutionViewModel {
 
     func cancelExecution(wallet: WalletManager) {
         wallet.disconnect()
+    }
+
+    func stopPolling() {
+        pollingTask?.cancel()
+        pollingTask = nil
+        isPolling = false
+    }
+
+    // MARK: - Private
+
+    private func startPolling(dealId: String) {
+        pollingTask?.cancel()
+        isPolling = true
+        pollingTask = Task {
+            // Poll every 5 seconds for up to 2 minutes.
+            for _ in 0..<24 {
+                try? await Task.sleep(for: .seconds(5))
+                guard !Task.isCancelled else { break }
+                do {
+                    let res = try await evidenceUseCase.fetchResolution(dealId: dealId)
+                    resolution = res
+                    // Also refresh deal to get updated status.
+                    deal = try await dealUseCase.fetchDeal(id: dealId)
+                    isPolling = false
+                    return
+                } catch {
+                    // 404 = not ready yet, keep polling. Other errors = stop.
+                    if let apiError = error as? APIError, case .httpError(statusCode: let code) = apiError, code == 404 {
+                        continue
+                    } else {
+                        break
+                    }
+                }
+            }
+            isPolling = false
+        }
     }
 }

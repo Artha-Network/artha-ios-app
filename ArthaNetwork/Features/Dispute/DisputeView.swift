@@ -8,71 +8,94 @@ struct DisputeView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                // Status header
-                GroupBox {
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .foregroundStyle(.orange)
-                            Text("Dispute Active")
-                                .font(.headline)
-                        }
-                        Text("Submit evidence to support your claim. The AI arbiter will review all evidence from both parties.")
+                // Step 1 — Open Dispute
+                stepCard(
+                    number: 1,
+                    title: "Open Dispute",
+                    isDone: true,
+                    content: {
+                        Label("Dispute opened — funds are frozen on-chain.",
+                              systemImage: "checkmark.circle.fill")
                             .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(.green)
                     }
-                }
-                .padding(.horizontal)
+                )
 
-                // Evidence section
-                GroupBox("Evidence Submitted") {
-                    if viewModel.evidence.isEmpty {
-                        Text("No evidence yet. Submit yours below.")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .padding(.vertical, 8)
-                    } else {
-                        ForEach(viewModel.evidence) { item in
-                            EvidenceRowView(evidence: item)
+                // Step 2 — Submit Evidence
+                stepCard(
+                    number: 2,
+                    title: "Submit Evidence",
+                    isDone: !viewModel.evidence.isEmpty,
+                    content: {
+                        VStack(alignment: .leading, spacing: 8) {
+                            if viewModel.evidence.isEmpty {
+                                Text("No evidence submitted yet.")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                            } else {
+                                Text("\(viewModel.evidence.count) item(s) submitted")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                            }
+
+                            Text("Be specific. Include dates, amounts, screenshots, and communication records.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+
+                            NavigationLink(value: AppRouter.Destination.evidence(dealId)) {
+                                Label("Submit Evidence", systemImage: "plus.circle")
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 10)
+                            }
+                            .buttonStyle(.borderedProminent)
                         }
                     }
-                }
-                .padding(.horizontal)
+                )
 
-                // Actions
-                VStack(spacing: 12) {
-                    NavigationLink(value: AppRouter.Destination.evidence(dealId)) {
-                        Label("Submit Evidence", systemImage: "plus.circle")
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(.blue)
-                            .foregroundStyle(.white)
-                            .clipShape(RoundedRectangle(cornerRadius: 10))
-                    }
-                    .buttonStyle(.plain)
+                // Step 3 — Request AI Arbitration
+                stepCard(
+                    number: 3,
+                    title: "Request AI Arbitration",
+                    isDone: viewModel.arbitrationResult != nil,
+                    content: {
+                        VStack(alignment: .leading, spacing: 10) {
+                            if viewModel.arbitrationResult != nil {
+                                Label("AI verdict issued.", systemImage: "checkmark.circle.fill")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.green)
 
-                    if viewModel.canRequestArbitration {
-                        Button {
-                            Task { await viewModel.requestArbitration() }
-                        } label: {
-                            Label("Request AI Arbitration", systemImage: "brain")
-                                .frame(maxWidth: .infinity)
-                                .padding()
-                                .background(.purple)
-                                .foregroundStyle(.white)
-                                .clipShape(RoundedRectangle(cornerRadius: 10))
+                                Button {
+                                    router.navigateToResolution(dealId)
+                                } label: {
+                                    Label("View Resolution", systemImage: "doc.text.magnifyingglass")
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 10)
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .tint(.purple)
+                            } else {
+                                aiExplanationBox
+
+                                Button {
+                                    Task { await viewModel.requestArbitration() }
+                                } label: {
+                                    Label("Request AI Verdict", systemImage: "brain")
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 10)
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .tint(.purple)
+                                .disabled(!viewModel.canRequestArbitration || viewModel.isLoading)
+                            }
                         }
-                        .disabled(viewModel.isLoading)
                     }
-                }
-                .padding(.horizontal)
+                )
 
                 if let error = viewModel.error {
                     ErrorBanner(message: error)
-                        .padding(.horizontal)
                 }
             }
-            .padding(.vertical)
+            .padding()
         }
         .navigationTitle("Dispute")
         .overlay {
@@ -81,8 +104,6 @@ struct DisputeView: View {
             }
         }
         .onAppear {
-            // Reload evidence every time this view appears so the list
-            // stays fresh after returning from EvidenceListView.
             Task { await viewModel.loadEvidence(dealId: dealId) }
         }
         .onChange(of: viewModel.arbitrationResult != nil) { _, hasResult in
@@ -90,5 +111,68 @@ struct DisputeView: View {
                 router.navigateToResolution(dealId)
             }
         }
+    }
+
+    // MARK: - Step Card
+
+    @ViewBuilder
+    private func stepCard<Content: View>(
+        number: Int,
+        title: String,
+        isDone: Bool,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    ZStack {
+                        Circle()
+                            .fill(isDone ? Color.green : Color.accentColor)
+                            .frame(width: 28, height: 28)
+                        if isDone {
+                            Image(systemName: "checkmark")
+                                .font(.caption.bold())
+                                .foregroundStyle(.white)
+                        } else {
+                            Text("\(number)")
+                                .font(.caption.bold())
+                                .foregroundStyle(.white)
+                        }
+                    }
+                    Text(title)
+                        .font(.headline)
+                    Spacer()
+                    Text(isDone ? "Done" : "Next")
+                        .font(.caption.bold())
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(isDone ? Color.green.opacity(0.15) : Color.accentColor.opacity(0.15))
+                        .foregroundStyle(isDone ? .green : .accentColor)
+                        .clipShape(Capsule())
+                }
+                content()
+            }
+        }
+    }
+
+    // MARK: - AI Explanation
+
+    private var aiExplanationBox: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("What happens next:")
+                .font(.subheadline.bold())
+            Group {
+                Text("• AI reads all evidence from both parties")
+                Text("• Analyzes claims against deal terms")
+                Text("• Issues a verdict in 10–30 seconds")
+                Text("• Decision is RELEASE (to seller) or REFUND (to buyer)")
+                Text("• The verdict is final and binding")
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+        .padding(10)
+        .background(Color.purple.opacity(0.06))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 }

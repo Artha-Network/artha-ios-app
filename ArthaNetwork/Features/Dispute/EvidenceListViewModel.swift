@@ -10,6 +10,14 @@ final class EvidenceListViewModel {
 
     private let evidenceUseCase = EvidenceUseCase()
 
+    var buyerCount: Int {
+        evidence.filter { $0.role == "buyer" }.count
+    }
+
+    var sellerCount: Int {
+        evidence.filter { $0.role == "seller" }.count
+    }
+
     func loadEvidence(dealId: String) async {
         isLoading = true
         do {

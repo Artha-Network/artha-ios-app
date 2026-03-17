@@ -11,8 +11,13 @@ struct EvidenceSubmitView: View {
     @State private var isLoading = false
     @State private var error: String?
 
+    private let maxCharacters = 2000
     private let evidenceTypes = ["DELIVERY_PROOF", "PAYMENT_PROOF", "COMMUNICATION", "DAMAGE_PROOF", "OTHER"]
     private let evidenceUseCase = EvidenceUseCase()
+
+    private var isOverLimit: Bool {
+        description.count > maxCharacters
+    }
 
     var body: some View {
         NavigationStack {
@@ -27,9 +32,24 @@ struct EvidenceSubmitView: View {
                     .pickerStyle(.menu)
                 }
 
-                Section("Description") {
+                Section {
                     TextEditor(text: $description)
                         .frame(minHeight: 120)
+                } header: {
+                    Text("Description")
+                } footer: {
+                    HStack {
+                        if isOverLimit {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundStyle(.red)
+                                .font(.caption2)
+                        }
+                        Spacer()
+                        Text("\(description.count) / \(maxCharacters)")
+                            .font(.caption)
+                            .foregroundStyle(isOverLimit ? .red : .secondary)
+                            .monospacedDigit()
+                    }
                 }
 
                 if let error {
@@ -48,7 +68,7 @@ struct EvidenceSubmitView: View {
                     Button("Submit") {
                         Task { await submit() }
                     }
-                    .disabled(description.isEmpty || isLoading)
+                    .disabled(description.isEmpty || isOverLimit || isLoading)
                 }
             }
             .overlay {
