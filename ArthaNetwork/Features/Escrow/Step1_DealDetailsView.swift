@@ -115,6 +115,7 @@ struct Step1_DealDetailsView: View {
         }
         .navigationTitle("Step 1 of 3 — Deal Details")
         .task {
+            viewModel.myWalletAddress = appState.currentUser?.walletAddress ?? ""
             // Restore any previously saved draft into the form on appear.
             if let draft = coordinator.cache.draft {
                 viewModel.loadFromDraft(draft)
