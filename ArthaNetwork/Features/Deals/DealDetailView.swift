@@ -18,6 +18,7 @@ struct DealDetailView: View {
             if let deal = viewModel.deal {
                 VStack(alignment: .leading, spacing: 20) {
                     dealHeader(deal)
+                    statusContextCard(deal)
                     dealDetails(deal)
                     if let contract = deal.contract, !contract.isEmpty {
                         contractSection(contract)
@@ -157,20 +158,20 @@ struct DealDetailView: View {
                 if deal.deliverDeadline != nil || deal.disputeDeadline != nil {
                     Divider()
                 }
+                if let fundedAt = deal.fundedAt {
+                    LabeledContent("Funded") {
+                        Text(fundedAt.formatted(date: .abbreviated, time: .shortened))
+                            .foregroundStyle(.secondary)
+                    }
+                }
                 if let deadline = deal.deliverDeadline {
                     LabeledContent("Delivery By") {
-                        Text(deadline.formatted(date: .abbreviated, time: .shortened))
-                            .foregroundStyle(
-                                deadline < Date() && !deal.status.isTerminal ? .red : .primary
-                            )
+                        deadlineLabel(deadline, isTerminal: deal.status.isTerminal)
                     }
                 }
                 if let disputeDeadline = deal.disputeDeadline {
                     LabeledContent("Dispute Window Ends") {
-                        Text(disputeDeadline.formatted(date: .abbreviated, time: .shortened))
-                            .foregroundStyle(
-                                disputeDeadline < Date() && !deal.status.isTerminal ? .red : .primary
-                            )
+                        deadlineLabel(disputeDeadline, isTerminal: deal.status.isTerminal)
                     }
                 }
                 if let vin = deal.vin {
@@ -203,6 +204,179 @@ struct DealDetailView: View {
         }
     }
 
+    // MARK: - Deadline Helper
+
+    @ViewBuilder
+    private func deadlineLabel(_ date: Date, isTerminal: Bool) -> some View {
+        let isPast = date < Date()
+        VStack(alignment: .trailing, spacing: 2) {
+            Text(date.formatted(date: .abbreviated, time: .shortened))
+                .foregroundStyle(isPast && !isTerminal ? .red : .primary)
+            if !isTerminal {
+                Text(isPast ? "Overdue" : deadlineCountdown(date))
+                    .font(.caption2)
+                    .foregroundStyle(isPast ? .red : .green)
+            }
+        }
+    }
+
+    private func deadlineCountdown(_ date: Date) -> String {
+        let interval = date.timeIntervalSinceNow
+        let days = Int(interval / 86400)
+        let hours = Int(interval / 3600) % 24
+        if days > 0 {
+            return "\(days)d \(hours)h remaining"
+        } else if hours > 0 {
+            return "\(hours)h remaining"
+        } else {
+            let minutes = max(1, Int(interval / 60))
+            return "\(minutes)m remaining"
+        }
+    }
+
+    // MARK: - Status Context Card
+
+    @ViewBuilder
+    private func statusContextCard(_ deal: Deal) -> some View {
+        let myWallet = appState.currentUser?.walletAddress ?? ""
+        let isBuyer = deal.buyerWallet == myWallet
+
+        switch deal.status {
+        case .INIT:
+            if isBuyer {
+                contextBox(icon: "doc.text.magnifyingglass", color: .blue, title: "Contract Review") {
+                    Text("You have been invited to this escrow deal. Review the terms and contract below, then fund the escrow to lock your USDC on-chain.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    if let amount = deal.priceUsd as Double? {
+                        Text("By funding, \(String(format: "%.2f", amount)) USDC + 0.5% fee will be transferred to the escrow vault.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+
+        case .FUNDED:
+            contextBox(icon: "shippingbox", color: .green, title: "Awaiting Delivery") {
+                Text("The escrow is funded. The seller should deliver the goods or services before the deadline.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if let deadline = deal.deliverDeadline {
+                    let isPast = deadline < Date()
+                    Label(
+                        isPast ? "Delivery deadline has passed" : "Delivery deadline: \(deadline.formatted(date: .abbreviated, time: .shortened))",
+                        systemImage: isPast ? "exclamationmark.triangle.fill" : "clock"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(isPast ? .red : .secondary)
+                }
+                Text("If there's a problem, either party can open a dispute before the dispute window closes.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+        case .DISPUTED:
+            contextBox(icon: "exclamationmark.bubble.fill", color: .orange, title: "Dispute In Progress") {
+                VStack(alignment: .leading, spacing: 6) {
+                    disputeStep(number: 1, text: "Dispute opened — funds locked on-chain", isDone: true)
+                    disputeStep(number: 2, text: "Both parties submit evidence", isDone: false)
+                    disputeStep(number: 3, text: "AI arbiter issues binding verdict (10–30s)", isDone: false)
+                }
+            }
+
+        case .RESOLVED:
+            if let resolution = deal.aiResolution {
+                let isRelease = resolution.outcome == "RELEASE"
+                contextBox(
+                    icon: isRelease ? "checkmark.circle.fill" : "arrow.uturn.left.circle.fill",
+                    color: isRelease ? .green : .orange,
+                    title: isRelease ? "Verdict: Release to Seller" : "Verdict: Refund to Buyer"
+                ) {
+                    if let pct = resolution.confidence as Double? {
+                        HStack(spacing: 6) {
+                            Text("AI Confidence:")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Text("\(Int(pct * 100))%")
+                                .font(.caption.bold())
+                                .foregroundStyle(pct > 0.7 ? .green : .orange)
+                        }
+                    }
+                    if let reason = resolution.reasonShort {
+                        Text(reason)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            } else {
+                contextBox(icon: "checkmark.seal", color: .purple, title: "Resolved") {
+                    Text("The AI arbiter has issued a verdict for this deal.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+        case .RELEASED:
+            terminalBox(icon: "checkmark.circle.fill", color: .green, text: "Funds have been released to the seller. This deal is complete.")
+
+        case .REFUNDED:
+            terminalBox(icon: "arrow.uturn.left.circle.fill", color: .orange, text: "Funds have been refunded to the buyer. This deal is complete.")
+        }
+    }
+
+    @ViewBuilder
+    private func contextBox<Content: View>(
+        icon: String, color: Color, title: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 8) {
+                Label(title, systemImage: icon)
+                    .font(.subheadline.bold())
+                    .foregroundStyle(color)
+                content()
+            }
+        }
+        .backgroundStyle(color.opacity(0.04))
+    }
+
+    @ViewBuilder
+    private func terminalBox(icon: String, color: Color, text: String) -> some View {
+        GroupBox {
+            HStack(spacing: 10) {
+                Image(systemName: icon)
+                    .font(.title2)
+                    .foregroundStyle(color)
+                Text(text)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func disputeStep(number: Int, text: String, isDone: Bool) -> some View {
+        HStack(spacing: 8) {
+            ZStack {
+                Circle()
+                    .fill(isDone ? Color.green : Color.secondary.opacity(0.3))
+                    .frame(width: 20, height: 20)
+                if isDone {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(.white)
+                } else {
+                    Text("\(number)")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(.white)
+                }
+            }
+            Text(text)
+                .font(.caption)
+                .foregroundStyle(isDone ? .primary : .secondary)
+        }
+    }
+
     @ViewBuilder
     private func dealActions(_ deal: Deal) -> some View {
         let myWallet = appState.currentUser?.walletAddress ?? ""
@@ -227,10 +401,12 @@ struct DealDetailView: View {
             }
 
             if deal.status.canRelease && isSeller {
+                let isResolved = deal.status == .RESOLVED
                 Button {
                     showReleaseConfirmation = true
                 } label: {
-                    Label("Release Funds", systemImage: "checkmark.circle.fill")
+                    Label(isResolved ? "Claim Funds" : "Release Funds",
+                          systemImage: isResolved ? "arrow.down.circle.fill" : "checkmark.circle.fill")
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 4)
                 }
@@ -240,14 +416,16 @@ struct DealDetailView: View {
             }
 
             if deal.status.canRefund && isBuyer {
+                let isResolved = deal.status == .RESOLVED
                 Button {
                     showRefundConfirmation = true
                 } label: {
-                    Label("Refund to Me", systemImage: "arrow.uturn.backward.circle.fill")
+                    Label(isResolved ? "Claim Refund" : "Refund to Me",
+                          systemImage: "arrow.uturn.backward.circle.fill")
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 4)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.borderedProminent)
                 .tint(.orange)
                 .disabled(viewModel.currentAction != nil)
             }
@@ -265,13 +443,15 @@ struct DealDetailView: View {
                 .disabled(viewModel.currentAction != nil)
             }
 
-            if deal.status == .DISPUTED {
+            if deal.status == .DISPUTED || deal.status == .RESOLVED {
                 NavigationLink(value: AppRouter.Destination.evidence(deal.id)) {
                     Label("View Evidence", systemImage: "doc.text.magnifyingglass")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
+            }
 
+            if deal.status == .DISPUTED {
                 NavigationLink(value: AppRouter.Destination.dispute(deal.id)) {
                     Label("Dispute Details", systemImage: "exclamationmark.bubble")
                         .frame(maxWidth: .infinity)

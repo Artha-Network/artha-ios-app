@@ -17,6 +17,7 @@ struct Deal: Codable, Identifiable, Sendable {
     let vin: String?
     let contract: String?
     let metadata: DealMetadata?
+    let fundedAt: Date?
     let createdAt: Date?
     let updatedAt: Date?
 

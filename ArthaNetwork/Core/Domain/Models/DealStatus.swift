@@ -36,10 +36,10 @@ enum DealStatus: String, Codable, Sendable, CaseIterable {
     }
 
     var canRelease: Bool {
-        self == .FUNDED
+        self == .FUNDED || self == .RESOLVED
     }
 
     var canRefund: Bool {
-        self == .FUNDED
+        self == .FUNDED || self == .RESOLVED
     }
 }
