@@ -15,6 +15,7 @@ final class AppRouter {
         case dealResolution(String)
         case evidence(String)
         case dispute(String)
+        case allDeals
     }
 
     func navigateToDeal(_ dealId: String) {

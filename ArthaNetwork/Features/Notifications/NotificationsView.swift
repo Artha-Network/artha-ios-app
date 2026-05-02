@@ -17,6 +17,10 @@ struct NotificationsView: View {
 
             ForEach(viewModel.notifications) { notification in
                 Button {
+                    // Mark as read on tap so the badge and unread dot clear immediately.
+                    if !notification.isRead {
+                        Task { await viewModel.markAsRead(notification.id) }
+                    }
                     if let dealId = notification.dealId {
                         router.navigateToDeal(dealId)
                     }

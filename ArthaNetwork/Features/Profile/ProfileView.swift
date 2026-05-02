@@ -7,6 +7,39 @@ struct ProfileView: View {
 
     var body: some View {
         Form {
+            // MARK: - Profile completeness
+            if !appState.isProfileComplete {
+                Section {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Label("Profile Incomplete", systemImage: "person.crop.circle.badge.exclamationmark")
+                            .font(.subheadline.bold())
+                            .foregroundStyle(.orange)
+
+                        VStack(alignment: .leading, spacing: 6) {
+                            completenessRow(
+                                label: "Display name",
+                                isDone: !(appState.currentUser?.displayName ?? "").isEmpty
+                            )
+                            completenessRow(
+                                label: "Email address",
+                                isDone: !(appState.currentUser?.emailAddress ?? "").isEmpty
+                            )
+                        }
+
+                        Text("Both fields are required to create and join escrow deals.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 4)
+                }
+            } else {
+                Section {
+                    Label("Profile Complete", systemImage: "checkmark.seal.fill")
+                        .foregroundStyle(.green)
+                        .font(.subheadline.bold())
+                }
+            }
+
             Section("Wallet") {
                 if let wallet = appState.currentUser?.walletAddress {
                     HStack {
@@ -82,6 +115,17 @@ struct ProfileView: View {
             }
             // Refresh from server in case fields changed since login.
             await viewModel.loadProfile()
+        }
+    }
+
+    private func completenessRow(label: String, isDone: Bool) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: isDone ? "checkmark.circle.fill" : "xmark.circle.fill")
+                .foregroundStyle(isDone ? .green : .red)
+                .font(.caption)
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(isDone ? .secondary : .primary)
         }
     }
 }

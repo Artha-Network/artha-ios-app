@@ -92,7 +92,7 @@ struct AuthenticatedTabView: View {
         @Bindable var router = router
         TabView(selection: $router.selectedTab) {
             NavigationStack(path: $router.dealsPath) {
-                DealListView()
+                DashboardView()
                     .navigationDestination(for: AppRouter.Destination.self) { destination in
                         switch destination {
                         case .dealDetail(let id):
@@ -103,10 +103,12 @@ struct AuthenticatedTabView: View {
                             EvidenceListView(dealId: id)
                         case .dispute(let id):
                             DisputeView(dealId: id)
+                        case .allDeals:
+                            DealListView()
                         }
                     }
             }
-            .tabItem { Label("Deals", systemImage: "list.bullet.rectangle") }
+            .tabItem { Label("Home", systemImage: "house.fill") }
             .tag(AppTab.deals)
 
             EscrowTabView()

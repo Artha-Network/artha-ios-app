@@ -9,6 +9,7 @@ enum APIEndpoints {
 
     // MARK: - User
     static let usersMe = "/api/users/me"
+    static func userReputation(_ wallet: String) -> String { "/api/users/\(wallet)/reputation" }
 
     // MARK: - Deals
     static let deals = "/api/deals"
