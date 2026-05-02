@@ -25,8 +25,9 @@ final class Step1ViewModel {
     var carYear: Int?
     var carMake = ""
     var carModel = ""
-    /// "LOCAL_PICKUP" or "SHIPPED"
-    var deliveryType = "LOCAL_PICKUP"
+    var odometerMiles: Int?
+    /// Matches server enum: local_pickup | same_city_carrier | cross_country_carrier
+    var deliveryType = "local_pickup"
     var hasTitleInHand = true
 
     /// Risk plan returned by the car escrow planning endpoint.
@@ -119,7 +120,7 @@ final class Step1ViewModel {
             carYear = draft.carYear
             carMake = draft.carMake ?? ""
             carModel = draft.carModel ?? ""
-            deliveryType = draft.deliveryType ?? "LOCAL_PICKUP"
+            deliveryType = draft.deliveryType ?? "local_pickup"
             hasTitleInHand = draft.hasTitleInHand ?? true
         }
     }
@@ -145,7 +146,7 @@ final class Step1ViewModel {
                     priceUsd: amount,
                     deliveryType: deliveryType,
                     hasTitleInHand: hasTitleInHand,
-                    odometerMiles: nil,
+                    odometerMiles: odometerMiles ?? 0,
                     year: carYear,
                     isSalvageTitle: false
                 )

@@ -109,4 +109,38 @@ struct EscrowActionUseCase {
             dealId: dealId, txSig: txSig, action: "OPEN_DISPUTE", actorWallet: pubkey
         )
     }
+
+    /// Buyer confirms delivery — server builds a resolve(RELEASE) tx; deal moves to RESOLVED.
+    /// The winning seller then claims via release() from the Resolution page.
+    func confirmDelivery(dealId: String) async throws {
+        guard let pubkey = wallet.publicKey else {
+            throw AppError.wallet("No wallet connected")
+        }
+
+        let response = try await dealRepo.confirmDelivery(dealId: dealId, buyerWallet: pubkey)
+        let txSig = try await TransactionBuilder.signAndSend(
+            txMessageBase64: response.txMessageBase64,
+            using: wallet
+        )
+        try await TransactionBuilder.confirmWithServer(
+            dealId: dealId, txSig: txSig, action: "CONFIRM_DELIVERY", actorWallet: pubkey
+        )
+    }
+
+    /// Seller voluntarily approves a refund — server builds a resolve(REFUND) tx; deal moves to RESOLVED.
+    /// The winning buyer then claims via refund() from the Resolution page.
+    func approveRefund(dealId: String) async throws {
+        guard let pubkey = wallet.publicKey else {
+            throw AppError.wallet("No wallet connected")
+        }
+
+        let response = try await dealRepo.approveRefund(dealId: dealId, sellerWallet: pubkey)
+        let txSig = try await TransactionBuilder.signAndSend(
+            txMessageBase64: response.txMessageBase64,
+            using: wallet
+        )
+        try await TransactionBuilder.confirmWithServer(
+            dealId: dealId, txSig: txSig, action: "APPROVE_REFUND", actorWallet: pubkey
+        )
+    }
 }

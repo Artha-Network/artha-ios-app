@@ -12,18 +12,28 @@ final class DealDetailViewModel {
     /// Set to true after a successful delete so the view can dismiss itself.
     var wasDeleted = false
     var currentAction: ActionStep?
+    /// Set true after confirmDelivery or approveRefund succeeds so the view can push ResolutionView.
+    var shouldNavigateToResolution = false
 
     // VIN title tracking
     var vehicleTitle: VehicleTitle?
 
     // USDC balance
     var usdcBalance: Double?
+    // SOL balance (in SOL, not lamports)
+    var solBalance: Double?
     var isBalanceLoading = false
 
     var hasInsufficientUSDC: Bool {
         guard let balance = usdcBalance, let amount = deal?.priceUsd else { return false }
         let fee = amount * 0.005
         return balance < (amount + fee)
+    }
+
+    /// True when SOL < 0.005 — minimum needed for tx fees + ATA rent (matches web-app threshold).
+    var hasInsufficientSOL: Bool {
+        guard let balance = solBalance else { return false }
+        return balance < 0.005
     }
 
     enum ActionStep: Equatable {
@@ -107,7 +117,13 @@ final class DealDetailViewModel {
         do {
             usdcBalance = try await SolanaClient.shared.getUSDCBalance(pubkey: pubkey)
         } catch {
-            // RPC error — leave balance as unknown (nil)
+            // RPC error — leave as unknown (nil)
+        }
+        do {
+            let lamports = try await SolanaClient.shared.getBalance(pubkey: pubkey)
+            solBalance = Double(lamports) / 1_000_000_000
+        } catch {
+            // RPC error — leave as unknown (nil)
         }
     }
 
@@ -142,6 +158,32 @@ final class DealDetailViewModel {
         defer { isLoading = false }
         do {
             try await dealUseCase.deleteDeal(id: id)
+            stopPolling()
+            wasDeleted = true
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    /// Called by the counterparty to accept deal terms (records counterpartyAcceptedAt).
+    /// No on-chain action — just a server-side acknowledgement.
+    func acceptDeal(id: String, walletAddress: String) async {
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            try await dealRepo.acceptDeal(id: id, walletAddress: walletAddress)
+            await loadDeal(id: id)
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    /// Called by the counterparty to decline and permanently delete an INIT deal.
+    func declineDeal(id: String, walletAddress: String) async {
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            try await dealRepo.declineDeal(id: id, walletAddress: walletAddress)
             stopPolling()
             wasDeleted = true
         } catch {
@@ -193,6 +235,36 @@ final class DealDetailViewModel {
         do {
             try await EscrowActionUseCase(wallet: wallet).openDispute(dealId: dealId)
             await loadDeal(id: dealId)
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
+    /// Buyer confirms delivery received — transitions deal FUNDED → RESOLVED (RELEASE verdict).
+    /// On success, sets `shouldNavigateToResolution` so the view pushes ResolutionView automatically.
+    func confirmDelivery(dealId: String, wallet: WalletManager) async {
+        actionError = nil
+        currentAction = .waitingForSignature
+        defer { currentAction = nil }
+        do {
+            try await EscrowActionUseCase(wallet: wallet).confirmDelivery(dealId: dealId)
+            await loadDeal(id: dealId)
+            shouldNavigateToResolution = true
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
+    /// Seller approves a voluntary refund — transitions deal FUNDED → RESOLVED (REFUND verdict).
+    /// On success, sets `shouldNavigateToResolution` so the view pushes ResolutionView automatically.
+    func approveRefund(dealId: String, wallet: WalletManager) async {
+        actionError = nil
+        currentAction = .waitingForSignature
+        defer { currentAction = nil }
+        do {
+            try await EscrowActionUseCase(wallet: wallet).approveRefund(dealId: dealId)
+            await loadDeal(id: dealId)
+            shouldNavigateToResolution = true
         } catch {
             actionError = error.localizedDescription
         }

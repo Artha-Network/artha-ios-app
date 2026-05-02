@@ -38,4 +38,8 @@ struct EvidenceUseCase {
     func fetchResolution(dealId: String) async throws -> Resolution {
         try await evidenceRepo.fetchResolution(dealId: dealId)
     }
+
+    func escalateVerdict(dealId: String, walletAddress: String, reason: String?) async throws {
+        try await evidenceRepo.escalateVerdict(dealId: dealId, walletAddress: walletAddress, reason: reason)
+    }
 }

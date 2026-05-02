@@ -23,14 +23,21 @@ enum APIEndpoints {
     static let actionRefund = "/actions/refund"
     static let actionOpenDispute = "/actions/open-dispute"
     static let actionConfirm = "/actions/confirm"
+    static let actionConfirmDelivery = "/actions/confirm-delivery"
+    static let actionApproveRefund = "/actions/approve-refund"
 
     // MARK: - Evidence
     static func evidence(_ dealId: String) -> String { "/api/deals/\(dealId)/evidence" }
     static func evidenceUpload(_ dealId: String) -> String { "/api/deals/\(dealId)/evidence/upload" }
 
+    // MARK: - Counterparty Accept / Decline
+    static func dealAccept(_ id: String) -> String { "/api/deals/\(id)/accept" }
+    static func dealDecline(_ id: String) -> String { "/api/deals/\(id)/decline" }
+
     // MARK: - Arbitration
     static func arbitrate(_ dealId: String) -> String { "/api/deals/\(dealId)/arbitrate" }
     static func resolution(_ dealId: String) -> String { "/api/deals/\(dealId)/resolution" }
+    static func escalateVerdict(_ dealId: String) -> String { "/api/deals/\(dealId)/escalate" }
 
     // MARK: - AI
     static let generateContract = "/api/ai/generate-contract"

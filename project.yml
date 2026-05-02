@@ -43,6 +43,13 @@ targets:
           - "**/.DS_Store"
     info:
       path: ArthaNetwork/Info.plist
+      properties:
+        CFBundleURLTypes:
+          - CFBundleURLName: com.arthanetwork.ios
+            CFBundleURLSchemes:
+              - artha
+        LSApplicationQueriesSchemes:
+          - phantom
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.arthanetwork.ios

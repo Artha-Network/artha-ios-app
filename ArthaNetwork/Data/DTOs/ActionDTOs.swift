@@ -38,6 +38,26 @@ struct DisputeRequest: Encodable {
     let callerWallet: String
 }
 
+/// Generic single-wallet body used by accept/decline endpoints.
+struct WalletRequest: Encodable {
+    let walletAddress: String
+}
+
+/// Generic success acknowledgement returned by accept/decline.
+struct SuccessResponse: Decodable {
+    let success: Bool
+}
+
+struct ConfirmDeliveryRequest: Encodable {
+    let dealId: String
+    let buyerWallet: String
+}
+
+struct ApproveRefundRequest: Encodable {
+    let dealId: String
+    let sellerWallet: String
+}
+
 struct GenerateContractRequest: Encodable {
     let title: String
     let role: String

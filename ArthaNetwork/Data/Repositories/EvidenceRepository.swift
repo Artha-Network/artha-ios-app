@@ -44,4 +44,15 @@ struct EvidenceRepository {
     func fetchResolution(dealId: String) async throws -> Resolution {
         try await api.get(APIEndpoints.resolution(dealId))
     }
+
+    func escalateVerdict(dealId: String, walletAddress: String, reason: String?) async throws {
+        let body = EscalateRequest(walletAddress: walletAddress, reason: reason)
+        // Server returns { ok: true, escalated_at: "...", reason: ... } — we discard it and reload.
+        let _: SuccessLike = try await api.post(APIEndpoints.escalateVerdict(dealId), body: body)
+    }
+}
+
+// Minimal decodable that accepts the escalate response without caring about its shape.
+private struct SuccessLike: Decodable {
+    let ok: Bool?
 }

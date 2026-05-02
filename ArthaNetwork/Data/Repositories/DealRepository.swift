@@ -84,6 +84,32 @@ struct DealRepository {
         return try await api.post(APIEndpoints.actionOpenDispute, body: body)
     }
 
+    /// Buyer confirms delivery — server builds resolve(RELEASE) tx partial-signed by arbiter.
+    func confirmDelivery(dealId: String, buyerWallet: String) async throws -> ActionResponse {
+        let body = ConfirmDeliveryRequest(dealId: dealId, buyerWallet: buyerWallet)
+        return try await api.post(APIEndpoints.actionConfirmDelivery, body: body)
+    }
+
+    /// Seller approves refund — server builds resolve(REFUND) tx partial-signed by arbiter.
+    func approveRefund(dealId: String, sellerWallet: String) async throws -> ActionResponse {
+        let body = ApproveRefundRequest(dealId: dealId, sellerWallet: sellerWallet)
+        return try await api.post(APIEndpoints.actionApproveRefund, body: body)
+    }
+
+    // MARK: - Counterparty Accept / Decline
+
+    @discardableResult
+    func acceptDeal(id: String, walletAddress: String) async throws -> SuccessResponse {
+        let body = WalletRequest(walletAddress: walletAddress)
+        return try await api.post(APIEndpoints.dealAccept(id), body: body)
+    }
+
+    @discardableResult
+    func declineDeal(id: String, walletAddress: String) async throws -> SuccessResponse {
+        let body = WalletRequest(walletAddress: walletAddress)
+        return try await api.post(APIEndpoints.dealDecline(id), body: body)
+    }
+
     // MARK: - AI
 
     func generateContract(

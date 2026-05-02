@@ -36,8 +36,15 @@ struct ResolutionView: View {
             isPresented: $showHumanArbitrationConfirm,
             titleVisibility: .visible
         ) {
-            Button("Send Email to Arbiter", role: .destructive) {
-                openHumanArbitrationEmail()
+            Button("Escalate to Human Arbiter", role: .destructive) {
+                let wallet = appState.currentUser?.walletAddress ?? ""
+                Task {
+                    await viewModel.escalate(dealId: dealId, walletAddress: wallet)
+                    // If API call failed, open email as a backup so the request is never lost.
+                    if viewModel.escalateError != nil {
+                        openHumanArbitrationEmail()
+                    }
+                }
             }
         } message: {
             Text("A human arbiter will review all evidence and the AI verdict. This decision is final and cannot be appealed. Typical response time is 24–48 hours.")
@@ -217,35 +224,50 @@ struct ResolutionView: View {
                 Label("Request Human Arbitration", systemImage: "person.badge.shield.checkmark")
                     .font(.subheadline.bold())
 
-                Text("If you disagree with the AI verdict, you can escalate to a human arbiter for a final review.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                if viewModel.resolution?.escalatedAt != nil {
+                    // Already escalated — show status rather than the button.
+                    Label("Escalated — A human arbiter is reviewing this case (24–48 hours).",
+                          systemImage: "checkmark.circle.fill")
+                        .font(.subheadline)
+                        .foregroundStyle(.green)
+                } else {
+                    Text("If you disagree with the AI verdict, you can escalate to a human arbiter for a final review.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("How it works:")
-                        .font(.caption.bold())
-                    Group {
-                        Text("• A human reviews all evidence and the AI verdict")
-                        Text("• Full access to deal data and communication records")
-                        Text("• Decision is final and binding — cannot be appealed")
-                        Text("• Typical response time: 24–48 hours")
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("How it works:")
+                            .font(.caption.bold())
+                        Group {
+                            Text("• A human reviews all evidence and the AI verdict")
+                            Text("• Full access to deal data and communication records")
+                            Text("• Decision is final and binding — cannot be appealed")
+                            Text("• Typical response time: 24–48 hours")
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                     }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                }
-                .padding(8)
-                .background(Color.orange.opacity(0.06))
-                .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .padding(8)
+                    .background(Color.orange.opacity(0.06))
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
 
-                Button {
-                    showHumanArbitrationConfirm = true
-                } label: {
-                    Label("Request Human Arbitration", systemImage: "envelope")
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
+                    if let escalateError = viewModel.escalateError {
+                        Text("Escalation failed: \(escalateError). An email has been sent as a backup.")
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
+
+                    Button {
+                        showHumanArbitrationConfirm = true
+                    } label: {
+                        Label("Request Human Arbitration", systemImage: "person.badge.shield.checkmark")
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.orange)
+                    .disabled(viewModel.isLoading)
                 }
-                .buttonStyle(.bordered)
-                .tint(.orange)
             }
         }
     }

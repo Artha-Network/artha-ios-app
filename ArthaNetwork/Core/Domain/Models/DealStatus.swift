@@ -35,11 +35,22 @@ enum DealStatus: String, Codable, Sendable, CaseIterable {
         self == .INIT
     }
 
+    /// Buyer confirms delivery received — transitions FUNDED → RESOLVED (RELEASE verdict).
+    var canConfirmDelivery: Bool {
+        self == .FUNDED
+    }
+
+    /// Seller voluntarily approves a refund — transitions FUNDED → RESOLVED (REFUND verdict).
+    var canApproveRefund: Bool {
+        self == .FUNDED
+    }
+
+    /// Winning party claims funds after AI/human verdict. Only available from RESOLVED.
     var canRelease: Bool {
-        self == .FUNDED || self == .RESOLVED
+        self == .RESOLVED
     }
 
     var canRefund: Bool {
-        self == .FUNDED || self == .RESOLVED
+        self == .RESOLVED
     }
 }

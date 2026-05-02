@@ -69,10 +69,13 @@ struct Step1_DealDetailsView: View {
                         .keyboardType(.numberPad)
                     TextField("Make", text: $viewModel.carMake)
                     TextField("Model", text: $viewModel.carModel)
+                    TextField("Odometer (miles)", value: $viewModel.odometerMiles, format: .number)
+                        .keyboardType(.numberPad)
 
                     Picker("Delivery Method", selection: $viewModel.deliveryType) {
-                        Text("Local Pickup").tag("LOCAL_PICKUP")
-                        Text("Shipped").tag("SHIPPED")
+                        Text("Local Pickup").tag("local_pickup")
+                        Text("Same City Carrier").tag("same_city_carrier")
+                        Text("Cross-Country Carrier").tag("cross_country_carrier")
                     }
 
                     Toggle("Title in hand", isOn: $viewModel.hasTitleInHand)

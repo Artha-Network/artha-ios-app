@@ -20,6 +20,10 @@ struct Deal: Codable, Identifiable, Sendable {
     let fundedAt: Date?
     let createdAt: Date?
     let updatedAt: Date?
+    // Set by the counterparty when they agree to the deal terms.
+    let counterpartyAcceptedAt: Date?
+    // The wallet that created (initiated) the deal on-chain.
+    let createdByWallet: String?
 
     // Populated on detail fetch
     let seller: User?

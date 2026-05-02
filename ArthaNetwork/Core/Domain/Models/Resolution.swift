@@ -10,6 +10,12 @@ struct Resolution: Codable, Sendable {
     let signature: String?
     let issuedAt: Date?
     let expiresAt: Date?
+    // Set when the losing party accepts the AI verdict.
+    let acceptedAt: Date?
+    // Set when the losing party escalates to human arbitration.
+    let escalatedAt: Date?
+    // "AI" or "HUMAN"
+    let source: String?
 }
 
 struct ArbitrationResponse: Codable, Sendable {

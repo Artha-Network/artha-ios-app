@@ -10,6 +10,8 @@ final class ResolutionViewModel {
     var currentAction: ActionStep?
     var error: String?
     var executeError: String?
+    /// Set to a non-nil string if the escalate API call fails (caller should open email fallback).
+    var escalateError: String?
 
     enum ActionStep: Equatable {
         case waitingForSignature
@@ -80,6 +82,25 @@ final class ResolutionViewModel {
 
     func cancelExecution(wallet: WalletManager) {
         wallet.disconnect()
+    }
+
+    /// Calls POST /api/deals/:id/escalate to escalate the AI verdict to a human arbiter.
+    /// On success, reloads the resolution so `escalatedAt` becomes visible.
+    /// On failure, sets `escalateError` so the caller can open the email fallback.
+    func escalate(dealId: String, walletAddress: String) async {
+        isLoading = true
+        escalateError = nil
+        defer { isLoading = false }
+        do {
+            try await evidenceUseCase.escalateVerdict(
+                dealId: dealId,
+                walletAddress: walletAddress,
+                reason: nil
+            )
+            await load(dealId: dealId)
+        } catch {
+            escalateError = error.localizedDescription
+        }
     }
 
     func stopPolling() {

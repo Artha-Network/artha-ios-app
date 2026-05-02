@@ -4,6 +4,7 @@ struct DealDetailView: View {
     let dealId: String
     @Environment(AppState.self) private var appState
     @Environment(WalletManager.self) private var walletManager
+    @Environment(AppRouter.self) private var router
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
     @State private var viewModel = DealDetailViewModel()
@@ -12,27 +13,19 @@ struct DealDetailView: View {
     @State private var showReleaseConfirmation = false
     @State private var showRefundConfirmation = false
     @State private var showDisputeConfirmation = false
+    @State private var showAcceptConfirmation = false
+    @State private var showDeclineConfirmation = false
+    @State private var showConfirmDeliveryConfirmation = false
+    @State private var showApproveRefundConfirmation = false
 
-    var body: some View {
+    // Split into two properties so the Swift type-checker can resolve each
+    // modifier chain independently (a single chain of 12+ modifiers overflows it).
+
+    /// ScrollView + navigation + overlay + alert + the 5 original confirmation dialogs.
+    private var baseView: some View {
         ScrollView {
             if let deal = viewModel.deal {
-                VStack(alignment: .leading, spacing: 20) {
-                    dealHeader(deal)
-                    statusContextCard(deal)
-                    usdcBalanceSection(deal)
-                    dealDetails(deal)
-                    if deal.vin != nil {
-                        vinTitleCard(deal)
-                    }
-                    if let contract = deal.contract, !contract.isEmpty {
-                        contractSection(contract)
-                    }
-                    dealActions(deal)
-                    if let events = deal.onchainEvents, !events.isEmpty {
-                        activitySection(events)
-                    }
-                }
-                .padding()
+                dealContent(deal)
             }
         }
         .navigationTitle("Deal")
@@ -111,29 +104,108 @@ struct DealDetailView: View {
         } message: {
             Text("This will lock the deal and start a dispute. The AI arbiter will review evidence from both parties.")
         }
-        .onChange(of: viewModel.wasDeleted) { _, deleted in
-            if deleted { dismiss() }
-        }
-        .onDisappear {
-            viewModel.stopPolling()
-        }
-        .task {
-            await viewModel.loadDeal(id: dealId)
-            // Start VIN title polling if deal has a VIN
-            if let vin = viewModel.deal?.vin, !vin.isEmpty {
-                viewModel.startTitlePolling(vin: vin)
+    }
+
+    /// Accept/decline dialogs + lifecycle hooks applied on top of baseView.
+    var body: some View {
+        baseView
+            .confirmationDialog(
+                "Accept Deal Terms",
+                isPresented: $showAcceptConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Accept Terms") {
+                    let wallet = appState.currentUser?.walletAddress ?? ""
+                    Task { await viewModel.acceptDeal(id: dealId, walletAddress: wallet) }
+                }
+            } message: {
+                Text("You are agreeing to the terms of this deal. The buyer can then fund the escrow.")
             }
-            // Start USDC balance polling if buyer viewing INIT deal
-            let myWallet = appState.currentUser?.walletAddress ?? ""
-            if viewModel.deal?.status == .INIT,
-               viewModel.deal?.buyerWallet == myWallet,
-               !myWallet.isEmpty {
-                viewModel.startBalancePolling(pubkey: myWallet)
+            .confirmationDialog(
+                "Decline Deal",
+                isPresented: $showDeclineConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Decline Deal", role: .destructive) {
+                    let wallet = appState.currentUser?.walletAddress ?? ""
+                    Task { await viewModel.declineDeal(id: dealId, walletAddress: wallet) }
+                }
+            } message: {
+                Text("This will permanently remove the deal. This cannot be undone.")
             }
-        }
+            .confirmationDialog(
+                "Confirm Delivery",
+                isPresented: $showConfirmDeliveryConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Confirm Delivery & Release") {
+                    Task { await viewModel.confirmDelivery(dealId: dealId, wallet: walletManager) }
+                }
+            } message: {
+                Text("Confirming delivery will authorize the release of funds to the seller. The deal will move to Resolved and the seller can claim the funds. This cannot be undone.")
+            }
+            .confirmationDialog(
+                "Approve Refund",
+                isPresented: $showApproveRefundConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Approve Refund", role: .destructive) {
+                    Task { await viewModel.approveRefund(dealId: dealId, wallet: walletManager) }
+                }
+            } message: {
+                Text("This will authorize a full refund to the buyer. The deal will move to Resolved and the buyer can claim their funds. This cannot be undone.")
+            }
+            .onChange(of: viewModel.wasDeleted) { _, deleted in
+                if deleted { dismiss() }
+            }
+            .onChange(of: viewModel.shouldNavigateToResolution) { _, should in
+                if should {
+                    viewModel.shouldNavigateToResolution = false
+                    router.navigateToResolution(dealId)
+                }
+            }
+            .onDisappear {
+                viewModel.stopPolling()
+            }
+            .task {
+                await viewModel.loadDeal(id: dealId)
+                if let vin = viewModel.deal?.vin, !vin.isEmpty {
+                    viewModel.startTitlePolling(vin: vin)
+                }
+                let myWallet = appState.currentUser?.walletAddress ?? ""
+                if viewModel.deal?.status == .INIT,
+                   viewModel.deal?.buyerWallet == myWallet,
+                   !myWallet.isEmpty {
+                    viewModel.startBalancePolling(pubkey: myWallet)
+                }
+            }
     }
 
     // MARK: - Subviews
+
+    /// Top-level content extractor — breaks this view into a named function so the
+    /// Swift type-checker can resolve the body's result type without timing out.
+    @ViewBuilder
+    private func dealContent(_ deal: Deal) -> some View {
+        VStack(alignment: .leading, spacing: 20) {
+            dealHeader(deal)
+            statusContextCard(deal)
+            counterpartyReviewCard(deal)
+            usdcBalanceSection(deal)
+            dealDetails(deal)
+            if deal.vin != nil {
+                vinTitleCard(deal)
+            }
+            if let contract = deal.contract, !contract.isEmpty {
+                contractSection(contract)
+            }
+            dealActions(deal)
+            if let events = deal.onchainEvents, !events.isEmpty {
+                activitySection(events)
+            }
+        }
+        .padding()
+    }
 
     @ViewBuilder
     private func dealHeader(_ deal: Deal) -> some View {
@@ -227,6 +299,24 @@ struct DealDetailView: View {
         let isBuyer = deal.buyerWallet == myWallet
 
         if deal.status == .INIT && isBuyer {
+            // SOL balance warning — must have ≥ 0.005 SOL for tx fees and ATA rent
+            if viewModel.hasInsufficientSOL {
+                GroupBox {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label("Insufficient SOL for Fees", systemImage: "exclamationmark.triangle.fill")
+                            .font(.subheadline.bold())
+                            .foregroundStyle(.orange)
+                        if let balance = viewModel.solBalance {
+                            Text("Your wallet has \(String(format: "%.4f", balance)) SOL. At least 0.005 SOL is needed to pay Solana network fees and account rent.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .backgroundStyle(Color.orange.opacity(0.04))
+            }
+
+            // USDC balance warning
             if viewModel.hasInsufficientUSDC {
                 GroupBox {
                     VStack(alignment: .leading, spacing: 8) {
@@ -309,11 +399,29 @@ struct DealDetailView: View {
                     }
 
                     if isTransferred && deal.status == .FUNDED {
-                        Label("Title has been transferred. You may now release the funds.",
-                              systemImage: "checkmark.circle.fill")
-                            .font(.caption)
-                            .foregroundStyle(.green)
+                        let myWallet = appState.currentUser?.walletAddress ?? ""
+                        let vinCardBuyer = deal.buyerWallet == myWallet
+                        let vinCardSeller = deal.sellerWallet == myWallet
+                        if vinCardBuyer {
+                            Button {
+                                showConfirmDeliveryConfirmation = true
+                            } label: {
+                                Label("Confirm Delivery & Release Funds",
+                                      systemImage: "checkmark.circle.fill")
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 6)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(.green)
                             .padding(.top, 4)
+                            .disabled(viewModel.currentAction != nil)
+                        } else if vinCardSeller {
+                            Label("Title transferred. Waiting for buyer to confirm delivery.",
+                                  systemImage: "checkmark.circle.fill")
+                                .font(.caption)
+                                .foregroundStyle(.green)
+                                .padding(.top, 4)
+                        }
                     }
                 }
             }
@@ -375,10 +483,43 @@ struct DealDetailView: View {
     private func statusContextCard(_ deal: Deal) -> some View {
         let myWallet = appState.currentUser?.walletAddress ?? ""
         let isBuyer = deal.buyerWallet == myWallet
+        let isSeller = deal.sellerWallet == myWallet
+
+        let isCreator = deal.createdByWallet != nil && deal.createdByWallet == myWallet
+        let isCounterparty = (isBuyer || isSeller) && deal.createdByWallet != nil && deal.createdByWallet != myWallet
 
         switch deal.status {
         case .INIT:
-            if isBuyer {
+            if isCounterparty && isBuyer {
+                // Buyer is the counterparty — the counterpartyReviewCard shows the full Accept/Decline UI.
+                // Show a brief context note only.
+                contextBox(icon: "doc.text.magnifyingglass", color: .blue, title: "Contract Review") {
+                    Text("You have been invited to this escrow deal. Review the terms and contract below, then fund the escrow to lock your USDC on-chain.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    if let amount = deal.priceUsd as Double? {
+                        Text("By funding, \(String(format: "%.2f", amount)) USDC + 0.5% fee will be transferred to the escrow vault.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            } else if isCreator && isSeller {
+                // Seller created the deal — show waiting state.
+                if deal.counterpartyAcceptedAt != nil {
+                    contextBox(icon: "checkmark.circle", color: .green, title: "Buyer Accepted Terms") {
+                        Text("The buyer accepted the deal terms. They can now fund the escrow.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    contextBox(icon: "hourglass", color: .orange, title: "Waiting for Buyer") {
+                        Text("The buyer has been invited to review the contract. You will be notified when they accept and fund the escrow.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            } else if isBuyer {
+                // Buyer created the deal (buyer is the creator — uncommon but valid).
                 contextBox(icon: "doc.text.magnifyingglass", color: .blue, title: "Contract Review") {
                     Text("You have been invited to this escrow deal. Review the terms and contract below, then fund the escrow to lock your USDC on-chain.")
                         .font(.caption)
@@ -390,24 +531,45 @@ struct DealDetailView: View {
                     }
                 }
             }
+            // Seller counterparty: counterpartyReviewCard handles the full UI below.
 
         case .FUNDED:
-            contextBox(icon: "shippingbox", color: .green, title: "Awaiting Delivery") {
-                Text("The escrow is funded. The seller should deliver the goods or services before the deadline.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                if let deadline = deal.deliverDeadline {
-                    let isPast = deadline < Date()
-                    Label(
-                        isPast ? "Delivery deadline has passed" : "Delivery deadline: \(deadline.formatted(date: .abbreviated, time: .shortened))",
-                        systemImage: isPast ? "exclamationmark.triangle.fill" : "clock"
-                    )
-                    .font(.caption)
-                    .foregroundStyle(isPast ? .red : .secondary)
+            if isBuyer {
+                contextBox(icon: "shippingbox", color: .green, title: "Awaiting Delivery") {
+                    Text("Funds are locked in escrow. When you receive delivery, press **Confirm Delivery** to release funds to the seller.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    if let deadline = deal.deliverDeadline {
+                        let isPast = deadline < Date()
+                        Label(
+                            isPast ? "Delivery deadline has passed" : "Delivery deadline: \(deadline.formatted(date: .abbreviated, time: .shortened))",
+                            systemImage: isPast ? "exclamationmark.triangle.fill" : "clock"
+                        )
+                        .font(.caption)
+                        .foregroundStyle(isPast ? .red : .secondary)
+                    }
+                    Text("If there's a problem, open a dispute before the dispute window closes.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
-                Text("If there's a problem, either party can open a dispute before the dispute window closes.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            } else if isSeller {
+                contextBox(icon: "shippingbox", color: .green, title: "Awaiting Delivery") {
+                    Text("Deliver the goods or services before the deadline. The buyer will confirm receipt.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    if let deadline = deal.deliverDeadline {
+                        let isPast = deadline < Date()
+                        Label(
+                            isPast ? "Delivery deadline has passed" : "Delivery deadline: \(deadline.formatted(date: .abbreviated, time: .shortened))",
+                            systemImage: isPast ? "exclamationmark.triangle.fill" : "clock"
+                        )
+                        .font(.caption)
+                        .foregroundStyle(isPast ? .red : .secondary)
+                    }
+                    Text("If you need to cancel the deal, use **Approve Refund** to return funds to the buyer.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
 
         case .DISPUTED:
@@ -512,6 +674,80 @@ struct DealDetailView: View {
         }
     }
 
+    // MARK: - Counterparty Review Card
+
+    /// Shown only to the counterparty (non-creator participant) when deal is INIT.
+    /// Provides Accept and Decline actions aligned with the web-app's "Contract Review" card.
+    @ViewBuilder
+    private func counterpartyReviewCard(_ deal: Deal) -> some View {
+        let myWallet = appState.currentUser?.walletAddress ?? ""
+        let isParticipant = deal.buyerWallet == myWallet || deal.sellerWallet == myWallet
+
+        if deal.status == .INIT,
+           isParticipant,
+           let createdBy = deal.createdByWallet,
+           createdBy != myWallet {
+
+            if let acceptedAt = deal.counterpartyAcceptedAt {
+                // Already accepted — show confirmation badge.
+                GroupBox {
+                    HStack(spacing: 10) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.title2)
+                            .foregroundStyle(.green)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Terms Accepted")
+                                .font(.subheadline.bold())
+                                .foregroundStyle(.green)
+                            Text("Accepted \(acceptedAt.formatted(date: .abbreviated, time: .shortened))")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .backgroundStyle(Color.green.opacity(0.04))
+            } else {
+                // Needs to accept or decline.
+                GroupBox {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Label("Action Required — Review Terms", systemImage: "exclamationmark.circle.fill")
+                            .font(.subheadline.bold())
+                            .foregroundStyle(.blue)
+
+                        Text("You have been invited to this deal. Review the contract below and accept or decline.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        HStack(spacing: 12) {
+                            Button {
+                                showAcceptConfirmation = true
+                            } label: {
+                                Label("Accept Terms", systemImage: "checkmark.circle.fill")
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 6)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(.green)
+                            .disabled(viewModel.isLoading)
+
+                            Button(role: .destructive) {
+                                showDeclineConfirmation = true
+                            } label: {
+                                Label("Decline", systemImage: "xmark.circle")
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 6)
+                            }
+                            .buttonStyle(.bordered)
+                            .tint(.red)
+                            .disabled(viewModel.isLoading)
+                        }
+                    }
+                }
+                .backgroundStyle(Color.blue.opacity(0.04))
+            }
+        }
+    }
+
     @ViewBuilder
     private func dealActions(_ deal: Deal) -> some View {
         let myWallet = appState.currentUser?.walletAddress ?? ""
@@ -532,16 +768,16 @@ struct DealDetailView: View {
                         .padding(.vertical, 4)
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(viewModel.currentAction != nil || viewModel.hasInsufficientUSDC)
+                .disabled(viewModel.currentAction != nil || viewModel.hasInsufficientUSDC || viewModel.hasInsufficientSOL)
             }
 
-            if deal.status.canRelease && isSeller {
-                let isResolved = deal.status == .RESOLVED
+            // Buyer: confirm delivery received → FUNDED → RESOLVED (RELEASE verdict)
+            if deal.status.canConfirmDelivery && isBuyer {
                 Button {
-                    showReleaseConfirmation = true
+                    showConfirmDeliveryConfirmation = true
                 } label: {
-                    Label(isResolved ? "Claim Funds" : "Release Funds",
-                          systemImage: isResolved ? "arrow.down.circle.fill" : "checkmark.circle.fill")
+                    Label("Confirm Delivery & Release",
+                          systemImage: "checkmark.circle.fill")
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 4)
                 }
@@ -550,12 +786,42 @@ struct DealDetailView: View {
                 .disabled(viewModel.currentAction != nil)
             }
 
+            // Seller: approve voluntary refund → FUNDED → RESOLVED (REFUND verdict)
+            if deal.status.canApproveRefund && isSeller {
+                Button {
+                    showApproveRefundConfirmation = true
+                } label: {
+                    Label("Approve Refund to Buyer",
+                          systemImage: "arrow.uturn.backward.circle.fill")
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 4)
+                }
+                .buttonStyle(.bordered)
+                .tint(.orange)
+                .disabled(viewModel.currentAction != nil)
+            }
+
+            // Seller claims after RESOLVED with RELEASE verdict
+            if deal.status.canRelease && isSeller {
+                Button {
+                    showReleaseConfirmation = true
+                } label: {
+                    Label("Claim Funds",
+                          systemImage: "arrow.down.circle.fill")
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 4)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.green)
+                .disabled(viewModel.currentAction != nil)
+            }
+
+            // Buyer claims after RESOLVED with REFUND verdict
             if deal.status.canRefund && isBuyer {
-                let isResolved = deal.status == .RESOLVED
                 Button {
                     showRefundConfirmation = true
                 } label: {
-                    Label(isResolved ? "Claim Refund" : "Refund to Me",
+                    Label("Claim Refund",
                           systemImage: "arrow.uturn.backward.circle.fill")
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 4)
